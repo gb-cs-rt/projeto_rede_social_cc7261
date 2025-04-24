@@ -3,5 +3,6 @@ bin/
 include/
 lib/
 pyvenv.cfg
+.venv/
 # Python
 __pycache__/
