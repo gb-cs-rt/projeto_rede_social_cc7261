@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  # servidor:
+  #   image: elixir:latest
+  #   container_name: servidor_elixir
+  #   working_dir: /app
+  #   volumes:
+  #     - ./servidor:/app
+  #   # command: >
+  #   #   sh -c "mix deps.get && mix run --no-halt"
+  #   tty: true
+  #   depends_on:
+  #     - rabbitmq
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
