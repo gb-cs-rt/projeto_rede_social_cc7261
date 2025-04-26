@@ -1,9 +1,11 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from broker import Broker
 from pydantic import BaseModel
 import time
 import uuid
 from contextlib import asynccontextmanager
+import json
 
 app = FastAPI()
 broker = Broker()
@@ -15,6 +17,15 @@ async def lifespan(app: FastAPI):
     await broker.disconnect()
 
 app = FastAPI(lifespan=lifespan)
+
+# Apply CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (you can restrict this to specific domains)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 class Post(BaseModel):
     username: str
@@ -49,5 +60,5 @@ async def get_posts():
     
     # Publish the message and wait for the response
     response = await broker.rpc_publish("msg_queue", message, correlation_id)
-    
+    response = json.loads(response)  # Parse the string into JSON
     return response

@@ -119,6 +119,10 @@ public class Main implements Runnable {
                 updateJsonFile(post, "add");
 
                 return "{\"status\": \"success\", \"postId\": \"" + postId + "\"}";
+            } else if ("get_posts".equals(operation)) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> posts = (List<Map<String, Object>>) data.get("posts");
+                return objectMapper.writeValueAsString(posts);
             } else {
                 return "{\"status\": \"error\", \"message\": \"Unknown operation\"}";
             }
