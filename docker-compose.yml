@@ -29,7 +29,7 @@ services:
     depends_on:
       - rabbitmq
     volumes:
-      - ./server/data:/app/data
+    - ./server/data:/data
 
   client:
     build:

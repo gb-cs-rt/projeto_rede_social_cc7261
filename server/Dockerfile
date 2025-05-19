@@ -6,4 +6,5 @@ COPY server/ /app
 
 RUN mvn clean install
 
+RUN mkdir -p /data && chmod 777 /data
 CMD ["mvn", "exec:java", "-Dexec.mainClass=com.gbcsrt.Main"]
