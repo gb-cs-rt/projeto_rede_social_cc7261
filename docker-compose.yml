@@ -1,20 +1,8 @@
 version: "3.8"
 
 services:
-  # servidor:
-  #   image: elixir:latest
-  #   container_name: servidor_elixir
-  #   working_dir: /app
-  #   volumes:
-  #     - ./servidor:/app
-  #   # command: >
-  #   #   sh -c "mix deps.get && mix run --no-halt"
-  #   tty: true
-  #   depends_on:
-  #     - rabbitmq
-
   rabbitmq:
-    image: rabbitmq:4-management
+    image: rabbitmq:3-management  # corrigido para versão estável existente
     container_name: rabbitmq
     ports:
       - "5672:5672"
@@ -22,3 +10,31 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rabbitmq
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: servidor_java
+    depends_on:
+      - rabbitmq
+    volumes:
+      - ./server/data:/app/data
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: client_web
+    ports:
+      - "8080:8080"

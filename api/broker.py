@@ -11,12 +11,18 @@ class Broker:
         self.loop = asyncio.get_event_loop()
 
     async def connect(self):
-        self.connection = await aio_pika.connect_robust("amqp://guest:guest@localhost/")
-        self.channel = await self.connection.channel()
-        
-        # Declare a response queue
-        self.response_queue = await self.channel.declare_queue(exclusive=True)
-        await self.response_queue.consume(self.on_response)
+        for attempt in range(10):
+            try:
+                self.connection = await aio_pika.connect_robust("amqp://guest:guest@rabbitmq/")
+                self.channel = await self.connection.channel()
+                self.response_queue = await self.channel.declare_queue(exclusive=True)
+                await self.response_queue.consume(self.on_response)
+                print("✅ Conectado ao RabbitMQ")
+                return
+            except Exception as e:
+                print(f"⏳ Tentativa {attempt+1}/10 – Aguardando RabbitMQ...")
+                await asyncio.sleep(2)
+        raise Exception("❌ Falha ao conectar ao RabbitMQ")
 
     async def disconnect(self):
         await self.connection.close()
