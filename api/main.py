@@ -92,3 +92,46 @@ async def get_follows(username: str):
     response = await broker.rpc_publish("msg_queue", message, correlation_id)
     response = json.loads(response)
     return response
+
+@app.get("/mutual-follows/{username}")
+async def get_mutual_follows(username: str):
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "get_mutual_follows",
+        "data": {"username": username}
+    }
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    return json.loads(response)
+
+class Mensagem(BaseModel):
+    sender: str
+    receiver: str
+    content: str
+    timestamp: str | None = None
+
+@app.post("/enviar-mensagem")
+async def enviar_mensagem(mensagem: Mensagem):
+    mensagem.timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "enviar_mensagem",
+        "data": mensagem.model_dump()
+    }
+
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    return response
+
+@app.get("/get-historico/{sender}/{receiver}")
+async def get_historico(sender: str, receiver: str):
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "get_historico",
+        "data": {
+            "sender": sender,
+            "receiver": receiver
+        }
+    }
+
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    return json.loads(response)

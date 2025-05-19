@@ -143,10 +143,17 @@ public class Main implements Runnable {
                     followingList.add(following);
                 }
                 follows.put(follower, followingList);
+                
+                // IMPORTANT FIX: Save the follows structure back to the data map
+                data.put("follows", follows);
+                
+                // Write to the JSON file without using the updateJsonFile method
+                objectMapper.writeValue(new File(jsonFile), data);
 
                 // Cast seguro + operação "add" para que seja aceita no processUpdate
                 Map<String, Object> castedFollows = objectMapper.convertValue(follows, new TypeReference<Map<String, Object>>() {});
-                updateJsonFile(castedFollows, "add_follow");
+                // Only publish the update, don't use updateJsonFile (which would overwrite again)
+                publishUpdate(castedFollows, "add_follow");
 
                 return "{\"status\": \"success\", \"message\": \"Follow registrado com sucesso\"}";
             } else if ("get_follows".equals(operation)) {
@@ -160,6 +167,57 @@ public class Main implements Runnable {
                 List<String> followingList = follows.getOrDefault(username, new ArrayList<>());
 
                 return objectMapper.writeValueAsString(followingList);
+            } else if ("enviar_mensagem".equals(operation)) {
+                Map<String, Object> msg = objectMapper.convertValue(requestData.get("data"), new TypeReference<>() {});
+                
+                List<Map<String, Object>> messages;
+                if (data.containsKey("messages")) {
+                    messages = objectMapper.convertValue(data.get("messages"), new TypeReference<>() {});
+                } else {
+                    messages = new ArrayList<>();
+                }
+
+                messages.add(msg);
+                
+                // IMPORTANT FIX: Save the updated messages list back to the data map
+                data.put("messages", messages);
+                
+                // Write to the JSON file without using the updateJsonFile method
+                objectMapper.writeValue(new File(jsonFile), data);
+                
+                // Only publish the update, don't use updateJsonFile
+                publishUpdate(msg, "add_message");
+
+                return "{\"status\": \"success\"}";
+            } else if ("get_historico".equals(operation)) {
+                Map<String, Object> payload = objectMapper.convertValue(requestData.get("data"), new TypeReference<>() {});
+                String sender = (String) payload.get("sender");
+                String receiver = (String) payload.get("receiver");
+
+                List<Map<String, Object>> messages = data.containsKey("messages")
+                    ? objectMapper.convertValue(data.get("messages"), new TypeReference<>() {})
+                    : new ArrayList<>();
+
+                List<Map<String, Object>> historico = messages.stream()
+                    .filter(m -> (sender.equals(m.get("sender")) && receiver.equals(m.get("receiver"))) ||
+                                (receiver.equals(m.get("sender")) && sender.equals(m.get("receiver"))))
+                    .toList();
+
+                return objectMapper.writeValueAsString(historico);
+            } else if ("get_mutual_follows".equals(operation)) {
+                String username = (String) ((Map<?, ?>) requestData.get("data")).get("username");
+
+                Map<String, List<String>> follows = data.containsKey("follows")
+                    ? objectMapper.convertValue(data.get("follows"), new TypeReference<>() {})
+                    : new HashMap<>();
+
+                List<String> seguindo = follows.getOrDefault(username, new ArrayList<>());
+
+                List<String> mutuos = seguindo.stream()
+                    .filter(user -> follows.containsKey(user) && follows.get(user).contains(username))
+                    .toList();
+
+                return objectMapper.writeValueAsString(mutuos);
             } else {
                 return "{\"status\": \"error\", \"message\": \"Unknown operation\"}";
             }
@@ -231,6 +289,19 @@ public class Main implements Runnable {
                 data.put("follows", receivedFollows);
                 objectMapper.writeValue(new File(jsonFile), data);
                 System.out.println("[Thread " + threadId + "] Estrutura de follows replicada.");
+            } else if ("add_message".equals(operation)) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> msg = (Map<String, Object>) entry;
+
+                List<Map<String, Object>> messages = data.containsKey("messages")
+                    ? objectMapper.convertValue(data.get("messages"), new TypeReference<>() {})
+                    : new ArrayList<>();
+
+                messages.add(msg);
+                data.put("messages", messages);
+
+                objectMapper.writeValue(new File(jsonFile), data);
+                System.out.println("[Thread " + threadId + "] Mensagem replicada.");
             }
         } catch (IOException e) {
             e.printStackTrace();

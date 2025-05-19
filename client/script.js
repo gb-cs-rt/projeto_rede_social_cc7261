@@ -2,6 +2,8 @@ let username = ""; // Variable to store the username
 let followingUsers = []; // Quem o usuário está seguindo
 let lastSeenPostTimestamps = new Set(); // timestamps únicos dos posts já vistos
 let followTimestamps = {}; // username → timestamp de quando começou a seguir
+let mutualFollows = []; // Usuários com follow mútuo
+let currentChatUser = null; // Usuário atualmente aberto no chat
 
 document.getElementById("login-btn").addEventListener("click", async () => {
     const usernameInput = document.getElementById("username-input").value;
@@ -33,6 +35,8 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     document.getElementById("post-container").style.display = "block";
     document.getElementById("feed").style.display = "block";
 
+    document.getElementById("chat-container").style.display = "flex";
+
     // 1. Carrega o feed logo após login
     await fetchAndUpdateFeed();
 
@@ -48,7 +52,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     }
 
     // 3. Atualizações periódicas com verificação de novos posts
-    setInterval(fetchAndUpdateFeed, 10000);
+    setInterval(fetchAndUpdateFeed, 1000);
 });
 
 document.getElementById("publish-btn").addEventListener("click", async (event) => {
@@ -132,13 +136,28 @@ async function fetchAndUpdateFeed() {
         console.error("Error fetching posts:", error);
         alert("Failed to load posts. Please try again later.");
     }
+
+    try {
+        const response = await fetch(`http://127.0.0.1:8000/mutual-follows/${username}`);
+        if (response.ok) {
+            mutualFollows = await response.json();
+            updateUserList(mutualFollows);
+        } else {
+            console.warn("Erro ao buscar mutual follows.");
+        }
+    } catch (e) {
+        console.error("Erro ao carregar mutual follows:", e);
+    }
 }
 
 function updateFeed(posts) {
     const feed = document.getElementById("feed");
     feed.innerHTML = "";
 
-    posts.forEach(post => {
+    // Show most recent posts first
+    const sortedPosts = [...posts].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    sortedPosts.forEach(post => {
         const postDiv = document.createElement("div");
         postDiv.className = "post";
 
@@ -209,3 +228,79 @@ function updateFeed(posts) {
         feed.appendChild(postDiv);
     });
 }
+
+function updateUserList(users) {
+    const userList = document.getElementById("user-list");
+    userList.innerHTML = "";
+
+    users.forEach(user => {
+        const li = document.createElement("li");
+        li.textContent = user;
+        li.onclick = () => {
+            currentChatUser = user;
+            if (window.chatInterval) clearInterval(window.chatInterval);
+            window.chatInterval = setInterval(() => {
+                if (currentChatUser) loadChatHistory(currentChatUser);
+            }, 1000);
+            document.getElementById("chat-header").textContent = `Chat com @${user}`;
+            loadChatHistory(user);
+        };
+        userList.appendChild(li);
+    });
+}
+
+async function loadChatHistory(otherUser) {
+    try {
+        const response = await fetch(`http://127.0.0.1:8000/get-historico/${username}/${otherUser}`);
+        if (!response.ok) throw new Error("Erro ao buscar histórico.");
+
+        const messages = await response.json();
+        renderMessages(messages);
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao carregar histórico.");
+    }
+}
+
+function renderMessages(messages) {
+    const container = document.getElementById("chat-messages");
+    container.innerHTML = "";
+
+    messages.forEach(msg => {
+        const div = document.createElement("div");
+        div.className = "chat-message " + (msg.sender === username ? "self" : "other");
+        div.innerHTML = `
+            <span>${msg.content}</span>
+            <span class="chat-timestamp">${msg.timestamp}</span>
+        `;
+        container.appendChild(div);
+    });
+
+    container.scrollTop = container.scrollHeight;
+}
+
+document.getElementById("chat-send-btn").addEventListener("click", async () => {
+    const input = document.getElementById("chat-input");
+    const content = input.value.trim();
+    if (!content || !currentChatUser) return;
+
+    try {
+        const response = await fetch("http://127.0.0.1:8000/enviar-mensagem", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sender: username,
+                receiver: currentChatUser,
+                content: content
+            })
+        });
+
+        if (!response.ok) throw new Error("Erro ao enviar.");
+
+        input.value = "";
+        await loadChatHistory(currentChatUser); // recarrega
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao enviar mensagem.");
+    }
+});
