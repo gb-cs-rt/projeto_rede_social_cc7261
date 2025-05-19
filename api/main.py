@@ -62,3 +62,33 @@ async def get_posts():
     response = await broker.rpc_publish("msg_queue", message, correlation_id)
     response = json.loads(response)  # Parse the string into JSON
     return response
+
+class FollowRequest(BaseModel):
+    follower: str
+    following: str
+    timestamp: str | None = None
+
+@app.post("/follow")
+async def follow_user(data: FollowRequest):
+    data.timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "follow",
+        "data": data.model_dump()
+    }
+    
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    return response
+
+@app.get("/follows/{username}")
+async def get_follows(username: str):
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "get_follows",
+        "data": {"username": username}
+    }
+
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    response = json.loads(response)
+    return response

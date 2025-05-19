@@ -123,6 +123,43 @@ public class Main implements Runnable {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> posts = (List<Map<String, Object>>) data.get("posts");
                 return objectMapper.writeValueAsString(posts);
+            } else if ("follow".equals(operation)) {
+                Map<String, Object> followData = objectMapper.convertValue(requestData.get("data"), new TypeReference<Map<String, Object>>() {});
+                String follower = (String) followData.get("follower");
+                String following = (String) followData.get("following");
+
+                // Acessar ou criar o campo "follows"
+                Map<String, List<String>> follows;
+                if (data.containsKey("follows")) {
+                    follows = objectMapper.convertValue(data.get("follows"), new TypeReference<Map<String, List<String>>>() {});
+                } else {
+                    follows = new HashMap<>();
+                    data.put("follows", follows);
+                }
+
+                // Acessar ou criar a lista de quem o follower segue
+                List<String> followingList = follows.getOrDefault(follower, new ArrayList<>());
+                if (!followingList.contains(following)) {
+                    followingList.add(following);
+                }
+                follows.put(follower, followingList);
+
+                // Cast seguro + operação "add" para que seja aceita no processUpdate
+                Map<String, Object> castedFollows = objectMapper.convertValue(follows, new TypeReference<Map<String, Object>>() {});
+                updateJsonFile(castedFollows, "add_follow");
+
+                return "{\"status\": \"success\", \"message\": \"Follow registrado com sucesso\"}";
+            } else if ("get_follows".equals(operation)) {
+                Map<String, Object> request = objectMapper.convertValue(requestData.get("data"), new TypeReference<Map<String, Object>>() {});
+                String username = (String) request.get("username");
+
+                Map<String, List<String>> follows = data.containsKey("follows")
+                    ? objectMapper.convertValue(data.get("follows"), new TypeReference<Map<String, List<String>>>() {})
+                    : new HashMap<>();
+
+                List<String> followingList = follows.getOrDefault(username, new ArrayList<>());
+
+                return objectMapper.writeValueAsString(followingList);
             } else {
                 return "{\"status\": \"error\", \"message\": \"Unknown operation\"}";
             }
@@ -179,14 +216,21 @@ public class Main implements Runnable {
             }
 
             if ("add".equals(operation)) {
-                // Add the new entry to the local data
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> posts = (List<Map<String, Object>>) data.get("posts");
-                posts.add(entry);
-
-                // Overwrite the local JSON file
+                if (entry.containsKey("postId")) {
+                    // É um post
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> posts = (List<Map<String, Object>>) data.get("posts");
+                    posts.add(entry);
+                    System.out.println("[Thread " + threadId + "] Adicionou post replicado.");
+                }
                 objectMapper.writeValue(new File(jsonFile), data);
-                System.out.println("[Thread " + threadId + "] Added new entry and updated local data file.");
+                System.out.println("[Thread " + threadId + "] Dados locais atualizados.");
+            } else if ("add_follow".equals(operation)) {
+                // Atualiza a estrutura de follows
+                Map<String, List<String>> receivedFollows = objectMapper.convertValue(entry, new TypeReference<Map<String, List<String>>>() {});
+                data.put("follows", receivedFollows);
+                objectMapper.writeValue(new File(jsonFile), data);
+                System.out.println("[Thread " + threadId + "] Estrutura de follows replicada.");
             }
         } catch (IOException e) {
             e.printStackTrace();
