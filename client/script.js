@@ -52,7 +52,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     }
 
     // 3. Atualizações periódicas com verificação de novos posts
-    setInterval(fetchAndUpdateFeed, 1000);
+    setInterval(fetchAndUpdateFeed, 5000);
 });
 
 document.getElementById("publish-btn").addEventListener("click", async (event) => {
@@ -241,7 +241,7 @@ function updateUserList(users) {
             if (window.chatInterval) clearInterval(window.chatInterval);
             window.chatInterval = setInterval(() => {
                 if (currentChatUser) loadChatHistory(currentChatUser);
-            }, 1000);
+            }, 5000);
             document.getElementById("chat-header").textContent = `Chat com @${user}`;
             loadChatHistory(user);
         };
@@ -302,5 +302,22 @@ document.getElementById("chat-send-btn").addEventListener("click", async () => {
     } catch (error) {
         console.error(error);
         alert("Erro ao enviar mensagem.");
+    }
+});
+
+document.getElementById("shutdown-coordinator-btn").addEventListener("click", async () => {
+    try {
+        const response = await fetch("http://127.0.0.1:8000/shutdown-coordinator", {
+            method: "POST"
+        });
+
+        if (response.ok) {
+            ;
+        } else {
+            alert("Falha ao solicitar desligamento.");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao comunicar com o servidor.");
     }
 });

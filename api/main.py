@@ -135,3 +135,17 @@ async def get_historico(sender: str, receiver: str):
 
     response = await broker.rpc_publish("msg_queue", message, correlation_id)
     return json.loads(response)
+
+@app.post("/shutdown-coordinator")
+async def shutdown_coordinator():
+    correlation_id = str(uuid.uuid4())
+    message = {
+        "operation": "shutdown_coordinator",
+        "data": {
+            "reason": "teste manual"
+        },
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    }
+
+    response = await broker.rpc_publish("msg_queue", message, correlation_id)
+    return response

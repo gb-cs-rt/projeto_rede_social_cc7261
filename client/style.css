@@ -187,3 +187,22 @@ body {
 .chat-message.other .chat-timestamp {
     float: right;
 }
+
+.shutdown-button {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background-color: #ff4d4d;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 9999;
+    opacity: 0.6;
+}
+.shutdown-button:hover {
+    opacity: 1;
+}
