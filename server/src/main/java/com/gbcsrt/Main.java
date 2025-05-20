@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.*;
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -31,6 +32,7 @@ public class Main implements Runnable {
     private volatile boolean running = true;
     private Thread coordinatorThread = null;
     private static volatile boolean electionInProgress = false;
+    private PrintWriter logWriter;
 
     public Main(int threadId) {
         this.threadId = threadId;
@@ -42,6 +44,15 @@ public class Main implements Runnable {
     public void run() {
         this.logicalClock = System.currentTimeMillis() / 1000L; // segundos desde época
         startClockUpdater();
+
+        try {
+            File logFile = new File("/data/log_thread_" + threadId + ".txt");
+            logWriter = new PrintWriter(logFile);
+            log("📝 Log iniciado para Thread " + threadId);
+        } catch (IOException e) {
+            System.err.println("❌ [Thread " + threadId + "] Erro ao criar arquivo de log:");
+            e.printStackTrace();
+        }
 
         Connection connection = null;
         Channel taskChannel = null;
@@ -104,28 +115,33 @@ public class Main implements Runnable {
                         if (body.startsWith("ELECTION_FROM_")) {
                             int source = Integer.parseInt(body.split("_")[2]);
                             System.out.println("[Thread " + threadId + "] ⚔️ Recebeu eleição de " + source + ". Respondendo...");
+                            log("⚔️ Recebeu eleição de " + source + ". Respondendo...");
                             if (threadId > source) {
                                 initiateElection(finalElectionChannel, finalConnection, finalSyncChannel);
                             }
                         } else if (body.startsWith("NEW_COORDINATOR_")) {
                             int coord = Integer.parseInt(body.split("_")[2]);
                             System.out.println("[Thread " + threadId + "] 👑 Novo coordenador é a thread " + coord);
+                            log("👑 Novo coordenador é a thread " + coord);
                             isCoordinator = false;
                             lastCoordinatorPing = System.currentTimeMillis();
                         }
                     }, consumerTag -> {});
 
                     System.out.println("✅ [Thread " + threadId + "] Conectado ao RabbitMQ na tentativa " + attempt);
+                    log("✅ Conectado ao RabbitMQ na tentativa " + attempt);
                     connected = true;
                     break;
                 } catch (Exception e) {
                     System.out.println("⏳ [Thread " + threadId + "] Tentativa " + attempt + "/" + maxAttempts + " falhou. Aguardando...");
+                    log("⏳ Tentativa " + attempt + "/" + maxAttempts + " falhou. Aguardando...");
                     Thread.sleep(attempt * 2000L);
                 }
             }
 
             if (!connected || connection == null || taskChannel == null || updateChannel == null) {
                 System.err.println("❌ [Thread " + threadId + "] Não foi possível conectar ao RabbitMQ após várias tentativas.");
+                log("❌ Não foi possível conectar ao RabbitMQ após várias tentativas.");
                 return;
             }
 
@@ -138,6 +154,7 @@ public class Main implements Runnable {
             updateChannel.queueBind(updateQueue, EXCHANGE_NAME, "");
 
             System.out.println("[Thread " + threadId + "] Server is waiting for messages...");
+            log("Server is waiting for messages...");
 
             final Channel finalTaskChannel = taskChannel;
             final Channel finalUpdateChannel = updateChannel;
@@ -148,6 +165,7 @@ public class Main implements Runnable {
                 String replyTo = delivery.getProperties().getReplyTo();
 
                 System.out.println("[Thread " + threadId + "] Received task message: " + message);
+                log("Received task message: " + message);
                 String response = processMessage(message, finalUpdateChannel);
 
                 AMQP.BasicProperties replyProps = new AMQP.BasicProperties.Builder()
@@ -159,6 +177,7 @@ public class Main implements Runnable {
             DeliverCallback updateCallback = (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), StandardCharsets.UTF_8);
                 System.out.println("[Thread " + threadId + "] Received update: " + message);
+                log("Received update: " + message);
                 processUpdate(message);
             };
 
@@ -178,6 +197,7 @@ public class Main implements Runnable {
                 if (syncChannel != null) syncChannel.close();
                 if (electionChannel != null) electionChannel.close();
                 if (connection != null) connection.close();
+                if (logWriter != null) logWriter.close();
             } catch (Exception e) {
                 System.err.println("[Thread " + threadId + "] Erro ao fechar recursos:");
                 e.printStackTrace();
@@ -305,6 +325,7 @@ public class Main implements Runnable {
             } else if ("shutdown_coordinator".equals(operation)) {
                 if (isCoordinator) {
                     System.out.println("[Thread " + threadId + "] 💣 Coordenador encerrado por mensagem no fanout.");
+                    log("💣 Coordenador encerrado por mensagem no fanout.");
                     running = false;
 
                     if (coordinatorThread != null) {
@@ -314,6 +335,7 @@ public class Main implements Runnable {
                     return "{\"status\": \"ok\", \"message\": \"Coordenador encerrado via fanout\"}";
                 } else {
                     System.out.println("[Thread " + threadId + "] Ignorando shutdown (não sou coordenador).");
+                    log("Ignorando shutdown (não sou coordenador).");
                     return "{\"status\": \"ok\", \"message\": \"Shutdown ignorado (não sou coordenador)\"}";
                 }
             } else {
@@ -345,6 +367,7 @@ public class Main implements Runnable {
 
             updateChannel.basicPublish(EXCHANGE_NAME, "", null, jsonData.getBytes(StandardCharsets.UTF_8));
             System.out.println("[Thread " + threadId + "] Published update: " + jsonData);
+            log("Published update: " + jsonData);
         } catch (Exception e) {
             System.err.println("[Thread " + threadId + "] Erro ao publicar update:");
             e.printStackTrace();
@@ -362,6 +385,7 @@ public class Main implements Runnable {
             // Ignore updates from the same thread
             if (sourceThreadId == threadId) {
                 System.out.println("[Thread " + threadId + "] Ignored update from itself.");
+                log("Ignored update from itself.");
                 return;
             }
 
@@ -372,15 +396,18 @@ public class Main implements Runnable {
                     List<Map<String, Object>> posts = (List<Map<String, Object>>) data.get("posts");
                     posts.add(entry);
                     System.out.println("[Thread " + threadId + "] Adicionou post replicado.");
+                    log("Adicionou post replicado.");
                 }
                 objectMapper.writeValue(new File(jsonFile), data);
                 System.out.println("[Thread " + threadId + "] Dados locais atualizados.");
+                log("Dados locais atualizados.");
             } else if ("add_follow".equals(operation)) {
                 // Atualiza a estrutura de follows
                 Map<String, List<String>> receivedFollows = objectMapper.convertValue(entry, new TypeReference<Map<String, List<String>>>() {});
                 data.put("follows", receivedFollows);
                 objectMapper.writeValue(new File(jsonFile), data);
                 System.out.println("[Thread " + threadId + "] Estrutura de follows replicada.");
+                log("Estrutura de follows replicada.");
             } else if ("add_message".equals(operation)) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> msg = (Map<String, Object>) entry;
@@ -394,6 +421,7 @@ public class Main implements Runnable {
 
                 objectMapper.writeValue(new File(jsonFile), data);
                 System.out.println("[Thread " + threadId + "] Mensagem replicada.");
+                log("Mensagem replicada.");
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -408,8 +436,10 @@ public class Main implements Runnable {
                 boolean created = dataDir.mkdirs();
                 if (created) {
                     System.out.println("[Thread " + threadId + "] Created /data directory");
+                    log("Created /data directory");
                 } else {
                     System.err.println("[Thread " + threadId + "] Failed to create /data directory");
+                    log("Failed to create /data directory");
                 }
             }
 
@@ -418,11 +448,13 @@ public class Main implements Runnable {
                 Map<String, Object> loadedData = objectMapper.readValue(file, new TypeReference<Map<String, Object>>() {});
                 data.putAll(loadedData);
                 System.out.println("[Thread " + threadId + "] Loaded data from file: " + data);
+                log("Loaded data from file: " + data);
             } else {
                 // Initialize with empty lists for posts and users
                 data.put("posts", new ArrayList<Map<String, Object>>());
                 data.put("users", new ArrayList<Map<String, Object>>());
                 System.out.println("[Thread " + threadId + "] No existing data file found. Starting with empty data.");
+                log("No existing data file found. Starting with empty data.");
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -456,6 +488,7 @@ public class Main implements Runnable {
                         int offset = -1;
                         logicalClock += offset;
                         System.out.println("[Thread " + threadId + "] ⏳ Relógio atrasado em " + offset + "s → " + logicalClock);
+                        log("⏳ Relógio atrasado em " + offset + "s → " + logicalClock);
                     } else {
                         logicalClock += 1;
                     }
@@ -470,8 +503,10 @@ public class Main implements Runnable {
         if (forcar || incomingTimestamp > logicalClock) {
             if (forcar) {
                 System.out.println("[Thread " + threadId + "] ⏰ Clock atualizado via 👑 Coordenador: de " + logicalClock + " para " + incomingTimestamp);
+                log("⏰ Clock atualizado via 👑 Coordenador: de " + logicalClock + " para " + incomingTimestamp);
             } else {
                 System.out.println("[Thread " + threadId + "] ⏰ Clock atualizado via mensagem: de " + logicalClock + " para " + incomingTimestamp);
+                log("⏰ Clock atualizado via mensagem: de " + logicalClock + " para " + incomingTimestamp);
             }
             logicalClock = incomingTimestamp;
         }
@@ -484,11 +519,14 @@ public class Main implements Runnable {
                     Thread.sleep(5000);
                     syncChannel.basicPublish(SYNC_EXCHANGE, "", null, String.valueOf(logicalClock).getBytes());
                     System.out.println("[Thread " + threadId + "] 🔄 Enviando clock (" + logicalClock + ") para sincronizar os outros.");
+                    log("🔄 Enviando clock (" + logicalClock + ") para sincronizar os outros.");
                 } catch (InterruptedException e) {
                     System.out.println("[Thread " + threadId + "] ⛔ Coordenador interrompido.");
+                    log("⛔ Coordenador interrompido.");
                     break;
                 } catch (Exception e) {
                     System.err.println("[Thread " + threadId + "] ❌ Erro ao enviar clock:");
+                    log("❌ Erro ao enviar clock:");
                     e.printStackTrace();
                 }
             }
@@ -506,6 +544,7 @@ public class Main implements Runnable {
 
                     if (elapsed > electionTimeout && !electionInProgress) {
                         System.out.println("[Thread " + threadId + "] ⚠️ Coordenador inativo. Iniciando eleição.");
+                        log("⚠️ Coordenador inativo. Iniciando eleição.");
                         electionInProgress = true;
                         initiateElection(electionChannel, connection, syncChannel);
                         break;
@@ -527,9 +566,11 @@ public class Main implements Runnable {
                     String msg = "ELECTION_FROM_" + threadId;
                     channel.basicPublish("", queue, null, msg.getBytes());
                     System.out.println("[Thread " + threadId + "] ▶️ Mandou eleição para thread " + i);
+                    log("▶️ Mandou eleição para thread " + i);
                     higherThreads.add(i);
                 } catch (Exception e) {
                     System.out.println("[Thread " + threadId + "] ⚠️ Falha ao contatar thread " + i + " (pode estar offline)");
+                    log("⚠️ Falha ao contatar thread " + i + " (pode estar offline)");
                 }
             }
 
@@ -538,9 +579,11 @@ public class Main implements Runnable {
 
             if (higherThreads.isEmpty() && electionInProgress) {
                 System.out.println("[Thread " + threadId + "] 🚨 Nenhum thread acima respondeu. Assumindo como coordenador.");
+                log("🚨 Nenhum thread acima respondeu. Assumindo como coordenador.");
                 announceNewCoordinator(connection, syncChannel);
             } else {
                 System.out.println("[Thread " + threadId + "] ⏳ Esperando resposta dos superiores...");
+                log("⏳ Esperando resposta dos superiores...");
                 // OBS: Se nenhuma thread superior assumir, você ainda pode fazer um timeout e tentar de novo
                 // ou deixar quieto, pois o superior que respondeu fará isso
             }
@@ -560,6 +603,7 @@ public class Main implements Runnable {
                     channel.basicPublish("", queue, null, msg.getBytes());
                 } catch (Exception e) {
                     System.out.println("[Thread " + threadId + "] ⚠️ Falha ao notificar thread " + i);
+                    log("⚠️ Falha ao notificar thread " + i);
                 }
             }
 
@@ -568,11 +612,23 @@ public class Main implements Runnable {
             lastCoordinatorPing = System.currentTimeMillis(); // previne nova eleição logo após assumir
 
             System.out.println("[Thread " + threadId + "] 👑 Agora sou o coordenador.");
+            log("👑 Agora sou o coordenador.");
             startCoordinator(syncChannel); // começa a emitir sincronizações
 
         } catch (Exception e) {
             System.err.println("[Thread " + threadId + "] Erro ao anunciar novo coordenador:");
             e.printStackTrace();
+        }
+    }
+
+    private void log(String message) {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        String fullMessage = "[" + timestamp + "] [Thread " + threadId + "] " + message;
+
+        System.out.println(fullMessage); // opcional: ainda mostra no terminal
+        if (logWriter != null) {
+            logWriter.println(fullMessage);
+            logWriter.flush();
         }
     }
 }
