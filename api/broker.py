@@ -20,9 +20,11 @@ class Broker:
                 print("✅ Conectado ao RabbitMQ")
                 return
             except Exception as e:
-                print(f"⏳ Tentativa {attempt+1}/10 – Aguardando RabbitMQ...")
-                await asyncio.sleep(2)
-        raise Exception("❌ Falha ao conectar ao RabbitMQ")
+                print(f"⏳ Tentativa {attempt + 1}/10 – Aguardando RabbitMQ... {e}")
+                await asyncio.sleep(5)  # Aumentado de 2 para 5 segundos
+
+        # Só levanta exceção depois de esgotar as tentativas
+        raise Exception("❌ Falha ao conectar ao RabbitMQ após 10 tentativas.")
 
     async def disconnect(self):
         await self.connection.close()
